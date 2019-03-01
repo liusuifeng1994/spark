@@ -54,6 +54,7 @@ private[spark] object RpcEnv {
       clientMode: Boolean): RpcEnv = {
     val config = RpcEnvConfig(conf, name, bindAddress, advertiseAddress, port, securityManager,
       numUsableCores, clientMode)
+    // 调用netty， 2.1 之后只调用了netty
     new NettyRpcEnvFactory().create(config)
   }
 }

@@ -96,8 +96,10 @@ private[spark] class SecurityManager(
   // Set our own authenticator to properly negotiate user/password for HTTP connections.
   // This is needed by the HTTP client fetching from the HttpServer. Put here so its
   // only set once.
+  //使用HTTP链接设置口令认证
   if (authOn) {
     Authenticator.setDefault(
+      // 创建口令认证实例，复写PasswordAuthentication方法，获得用户名和密码
       new Authenticator() {
         override def getPasswordAuthentication(): PasswordAuthentication = {
           var passAuth: PasswordAuthentication = null
@@ -341,6 +343,9 @@ private[spark] class SecurityManager(
    *
    * In other modes, assert that the auth secret is set in the configuration.
    */
+  // 初始化身份验证密码
+  // 1。 在YARN和local模式下，生成新密钥并将其存储在当前用户的凭据中
+  // 2, 其他模式下，配置中设置
   def initializeAuth(): Unit = {
     import SparkMasterRegex._
 
@@ -350,7 +355,9 @@ private[spark] class SecurityManager(
 
     // TODO: this really should be abstracted somewhere else.
     val master = sparkConf.get(SparkLauncher.SPARK_MASTER, "")
+
     val storeInUgi = master match {
+      // 在YARN和本地模式下
       case "yarn" | "local" | LOCAL_N_REGEX(_) | LOCAL_N_FAILURES_REGEX(_, _) =>
         true
 
@@ -359,6 +366,7 @@ private[spark] class SecurityManager(
         // with the way k8s handles propagation of delegation tokens.
         false
 
+        // 其他模式
       case _ =>
         require(sparkConf.contains(SPARK_AUTH_SECRET_CONF),
           s"A secret key must be specified via the $SPARK_AUTH_SECRET_CONF config.")

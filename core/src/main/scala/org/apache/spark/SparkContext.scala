@@ -74,15 +74,18 @@ import org.apache.spark.util.logging.DriverLogger
 class SparkContext(config: SparkConf) extends Logging {
 
   // The call site where this SparkContext was constructed.
+  // callSite 存储了线程栈中最靠近栈顶的用户类和最靠近栈底的scala或spark核心类
   private val creationSite: CallSite = Utils.getCallSite()
 
   // In order to prevent multiple SparkContexts from being active at the same time, mark this
   // context as having started construction.
   // NOTE: this must be placed at the beginning of the SparkContext constructor.
+  // 标记 SparkContext 正在构造中，因为确保实例的唯一性，以防止多个SparkContext实例同时成为active级别的
   SparkContext.markPartiallyConstructed(this)
 
   val startTime = System.currentTimeMillis()
 
+  // 定义stop变量，AtomicBoolean是线程阻塞的，一个线程没结束，另外的线程都不能使用
   private[spark] val stopped: AtomicBoolean = new AtomicBoolean(false)
 
   private[spark] def assertNotStopped(): Unit = {
@@ -224,6 +227,7 @@ class SparkContext(config: SparkConf) extends Logging {
    * Return a copy of this SparkContext's configuration. The configuration ''cannot'' be
    * changed at runtime.
    */
+
   def getConf: SparkConf = conf.clone()
 
   def jars: Seq[String] = _jars
@@ -359,10 +363,13 @@ class SparkContext(config: SparkConf) extends Logging {
     Utils.setLogLevel(org.apache.log4j.Level.toLevel(upperCased))
   }
 
+  // 核心初始化步骤
   try {
+    // 1. 复制conf，对各种配置信息进行校验
     _conf = config.clone()
     _conf.validateSettings()
 
+    // 1.1 校验 conf是否设置了spark.master和app.name
     if (!_conf.contains("spark.master")) {
       throw new SparkException("A master URL must be set in your configuration")
     }
@@ -375,6 +382,7 @@ class SparkContext(config: SparkConf) extends Logging {
     // log out spark.app.name in the Spark driver logs
     logInfo(s"Submitted application: $appName")
 
+    //1.2 检验yarn队列提交的配置
     // System property spark.yarn.app.id must be set if user code ran by AM on a YARN cluster
     if (master == "yarn" && deployMode == "cluster" && !_conf.contains("spark.yarn.app.id")) {
       throw new SparkException("Detected yarn cluster mode, but isn't running on a cluster. " +
@@ -387,6 +395,8 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // Set Spark driver host and port system properties. This explicitly sets the configuration
     // instead of relying on the default value of the config constant.
+
+    // 2. 设置driver的Host和Port， 获取jar包和files
     _conf.set(DRIVER_HOST_ADDRESS, _conf.get(DRIVER_HOST_ADDRESS))
     _conf.setIfMissing(DRIVER_PORT, 0)
 
@@ -396,6 +406,7 @@ class SparkContext(config: SparkConf) extends Logging {
     _files = _conf.getOption("spark.files").map(_.split(",")).map(_.filter(_.nonEmpty))
       .toSeq.flatten
 
+    // 3. 初始化事件日志目录和压缩类型
     _eventLogDir =
       if (isEventLogEnabled) {
         val unresolvedDir = conf.get(EVENT_LOG_DIR).stripSuffix("/")
@@ -413,6 +424,7 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     }
 
+    // 4. 初始LiveListenerBus 和app状态存储
     _listenerBus = new LiveListenerBus(_conf)
 
     // Initialize the app status store and listener before SparkEnv is created so that it gets
@@ -422,6 +434,8 @@ class SparkContext(config: SparkConf) extends Logging {
     listenerBus.addToStatusQueue(_statusStore.listener.get)
 
     // Create the Spark execution environment (cache, map output tracker, etc)
+
+    // 5. 创建spark执行所需要的sparkEnv
     _env = createSparkEnv(_conf, isLocal, listenerBus)
     SparkEnv.set(_env)
 
@@ -431,8 +445,10 @@ class SparkContext(config: SparkConf) extends Logging {
       _conf.set("spark.repl.class.uri", replUri)
     }
 
+    // 6. 初始化状态跟踪器SparkStatusTracker
     _statusTracker = new SparkStatusTracker(this, _statusStore)
 
+    // 7. 根据配置创建ConsoleProgressBar
     _progressBar =
       if (_conf.get(UI_SHOW_CONSOLE_PROGRESS)) {
         Some(new ConsoleProgressBar(this))
@@ -440,6 +456,7 @@ class SparkContext(config: SparkConf) extends Logging {
         None
       }
 
+    // 8. 创建并初始化Spark UI
     _ui =
       if (conf.get(UI_ENABLED)) {
         Some(SparkUI.create(Some(this), _statusStore, _conf, _env.securityManager, appName, "",
@@ -452,6 +469,8 @@ class SparkContext(config: SparkConf) extends Logging {
     // the bound port to the cluster manager properly
     _ui.foreach(_.bind())
 
+
+    // 9. hadoop相关配置以及Executor环境变量的设置
     _hadoopConfiguration = SparkHadoopUtil.get.newConfiguration(_conf)
 
     // Add each JAR given through the constructor
@@ -487,17 +506,21 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // We need to register "HeartbeatReceiver" before "createTaskScheduler" because Executor will
     // retrieve "HeartbeatReceiver" in the constructor. (SPARK-6640)
+    // 10. 注册HeartbeatReceiver心跳接收器
     _heartbeatReceiver = env.rpcEnv.setupEndpoint(
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
     // Create and start the scheduler
+    // 11. 创建TaskScheduler
     val (sched, ts) = SparkContext.createTaskScheduler(this, master, deployMode)
     _schedulerBackend = sched
     _taskScheduler = ts
+    // 12. 创建DAGScheduler
     _dagScheduler = new DAGScheduler(this)
     _heartbeatReceiver.ask[Boolean](TaskSchedulerIsSet)
 
     // create and start the heartbeater for collecting memory metrics
+
     _heartbeater = new Heartbeater(env.memoryManager,
       () => SparkContext.this.reportHeartBeat(),
       "driver-heartbeater",
@@ -506,6 +529,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
     // constructor
+    // 13. 启动TaskScheduler
     _taskScheduler.start()
 
     _applicationId = _taskScheduler.applicationId()
@@ -515,14 +539,19 @@ class SparkContext(config: SparkConf) extends Logging {
       System.setProperty("spark.ui.proxyBase", "/proxy/" + _applicationId)
     }
     _ui.foreach(_.setAppId(_applicationId))
+
+    // 14. 初始化块管理器BlockManager
     _env.blockManager.initialize(_applicationId)
 
     // The metrics system for Driver need to be set spark.app.id to app ID.
     // So it should start after we get app ID from the task scheduler and set spark.app.id.
+
+    // 15. 启动测量系统MetricsSystem
     _env.metricsSystem.start()
     // Attach the driver metrics servlet handler to the web ui after the metrics system is started.
     _env.metricsSystem.getServletHandlers.foreach(handler => ui.foreach(_.attachHandler(handler)))
 
+    // 16. 创建事件日志监听器
     _eventLogger =
       if (isEventLogEnabled) {
         val logger =
@@ -536,6 +565,7 @@ class SparkContext(config: SparkConf) extends Logging {
       }
 
     // Optionally scale number of executors dynamically based on workload. Exposed for testing.
+    // 17. 创建和启动Executor分配管理器ExecutorAllocationManager
     val dynamicAllocationEnabled = Utils.isDynamicAllocationEnabled(_conf)
     _executorAllocationManager =
       if (dynamicAllocationEnabled) {
@@ -552,6 +582,8 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     _executorAllocationManager.foreach(_.start())
 
+
+    // 18. 创建和启动ContextCleaner
     _cleaner =
       if (_conf.get(CLEANER_REFERENCE_TRACKING)) {
         Some(new ContextCleaner(this))
@@ -560,11 +592,18 @@ class SparkContext(config: SparkConf) extends Logging {
       }
     _cleaner.foreach(_.start())
 
+    // 19. 额外的SparkListenser与启动事件总线（setupAndStartListenerBus）
     setupAndStartListenerBus()
+
+    // 20. Spark环境更新（postEnvironmentUpdate）
     postEnvironmentUpdate()
+
+    // 21. 投递应用程序启动事件（postApplicationStart
     postApplicationStart()
 
     // Post init
+
+    // 22. 创建DAGSchedulerSource、BlockManagerSource和ExecutorAllocationManagerSource
     _taskScheduler.postStartHook()
     _env.metricsSystem.registerSource(_dagScheduler.metricsSource)
     _env.metricsSystem.registerSource(new BlockManagerSource(_env.blockManager))
@@ -2388,6 +2427,8 @@ class SparkContext(config: SparkConf) extends Logging {
   // In order to prevent multiple SparkContexts from being active at the same time, mark this
   // context as having finished construction.
   // NOTE: this must be placed at the end of the SparkContext constructor.
+
+  // 最后将SparkContext标记为激活
   SparkContext.setActiveContext(this)
 }
 
@@ -2630,6 +2671,7 @@ object SparkContext extends Logging {
   }
 
   /**
+   * 获取在本地模式下执行程序需要的cores个数，否则不需要，为0
    * The number of cores available to the driver to use for tasks such as I/O with Netty
    */
   private[spark] def numDriverCores(master: String, conf: SparkConf): Int = {
