@@ -26,6 +26,12 @@ import io.netty.util.NettyRuntime;
 /**
  * A central location that tracks all the settings we expose to users.
  */
+
+/**
+ * Transport相关的配置类，两个主要的属性，conf和module
+ * 其他为一些IO属性
+ * 一般通过SparkTransportConf 创建TransportConf
+ */
 public class TransportConf {
 
   private final String SPARK_NETWORK_IO_MODE_KEY;

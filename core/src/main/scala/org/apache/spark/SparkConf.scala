@@ -51,13 +51,24 @@ import org.apache.spark.util.Utils
  * @note Once a SparkConf object is passed to Spark, it is cloned and can no longer be modified
  * by the user. Spark does not support modifying the configuration at runtime.
  */
+
+/**
+  * SparkConf类，存储和设置spark中的配置
+  * 存储方式；  ConcurrentHashMap[String, String]
+  * 配置来源：
+  *   1. 系统属性中的配置（系统属性中以spark.开头的配置）
+  *   2. SparkConf配置的API，如setAppName, serMaster
+  *   3. 克隆SparkConf配置，不同组件调用相同的配置就会直接克隆配置，
+  *      SparkConf 继承了 cloneable, 重写了clone方法
+  * @param loadDefaults
+  */
 class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Serializable {
 
   import SparkConf._
 
   /** Create a SparkConf that loads defaults from system properties and the classpath */
   def this() = this(true)
-
+  //spark的设置属性存在 ConcurrentHashMap中，都为字符串
   private val settings = new ConcurrentHashMap[String, String]()
 
   @transient private lazy val reader: ConfigReader = {
@@ -68,12 +79,13 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Seria
     _reader
   }
 
+  // 装载系统默认的参数，获取系统中以spark.为前缀的那部分属性
   if (loadDefaults) {
     loadFromSystemProperties(false)
   }
 
   private[spark] def loadFromSystemProperties(silent: Boolean): SparkConf = {
-    // Load any spark.* system properties
+    // 加载以spark为开头的属性 
     for ((key, value) <- Utils.getSystemProperties if key.startsWith("spark.")) {
       set(key, value, silent)
     }
@@ -81,6 +93,7 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Seria
   }
 
   /** Set a configuration variable. */
+  // 将属性加入在map中，校验key和value是否为null
   def set(key: String, value: String): SparkConf = {
     set(key, value, false)
   }
@@ -95,6 +108,7 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Seria
     if (!silent) {
       logDeprecationWarning(key)
     }
+    // 加入hashmap中
     settings.put(key, value)
     this
   }
@@ -461,6 +475,7 @@ class SparkConf(loadDefaults: Boolean) extends Cloneable with Logging with Seria
   private[spark] def contains(entry: ConfigEntry[_]): Boolean = contains(entry.key)
 
   /** Copy this object */
+  // 克隆配置
   override def clone: SparkConf = {
     val cloned = new SparkConf(false)
     settings.entrySet().asScala.foreach { e =>

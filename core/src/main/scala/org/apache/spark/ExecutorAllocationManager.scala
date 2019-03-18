@@ -243,7 +243,9 @@ private[spark] class ExecutorAllocationManager(
    * Register for scheduler callbacks to decide when to add and remove executors, and start
    * the scheduling task.
    */
+  // 动态调整
   def start(): Unit = {
+    // 1. 往事件总线中加入ExecutorAllocationListener
     listenerBus.addToManagementQueue(listener)
 
     val scheduleTask = new Runnable() {

@@ -566,6 +566,7 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // Optionally scale number of executors dynamically based on workload. Exposed for testing.
     // 17. 创建和启动Executor分配管理器ExecutorAllocationManager
+      // 17.1 判断是否启用，仅当非local下或spark.dynamicaAllocation.testing为true启动
     val dynamicAllocationEnabled = Utils.isDynamicAllocationEnabled(_conf)
     _executorAllocationManager =
       if (dynamicAllocationEnabled) {
@@ -2696,6 +2697,8 @@ object SparkContext extends Logging {
    * Create a task scheduler based on a given master URL.
    * Return a 2-tuple of the scheduler backend and the task scheduler.
    */
+
+  // 创建任务调度器
   private def createTaskScheduler(
       sc: SparkContext,
       master: String,

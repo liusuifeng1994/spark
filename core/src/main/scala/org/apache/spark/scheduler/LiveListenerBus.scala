@@ -50,21 +50,27 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
   private[spark] val metrics = new LiveListenerBusMetrics(conf)
 
   // Indicate if `start()` is called
+  // LiveListenerBus的启动状态
   private val started = new AtomicBoolean(false)
   // Indicate if `stop()` is called
+  // LiveListenerBus的停止状态
   private val stopped = new AtomicBoolean(false)
 
   /** A counter for dropped events. It will be reset every time we log it. */
+    // LiveListenerBus的drop计数
   private val droppedEventsCounter = new AtomicLong(0L)
 
   /** When `droppedEventsCounter` was logged last time in milliseconds. */
+  // 最后一次日志输出droppedEventsCounter的时间
   @volatile private var lastReportTimestamp = 0L
 
+  // 事件的队列
   private val queues = new CopyOnWriteArrayList[AsyncEventQueue]()
 
   // Visible for testing.
   @volatile private[scheduler] var queuedEvents = new mutable.ListBuffer[SparkListenerEvent]()
 
+  // 有4种命名队列
   /** Add a listener to queue shared by all non-internal listeners. */
   def addToSharedQueue(listener: SparkListenerInterface): Unit = {
     addToQueue(listener, SHARED_QUEUE)
@@ -90,6 +96,7 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
    * of each other (each one uses a separate thread for delivering events), allowing slower
    * listeners to be somewhat isolated from others.
    */
+  // 添加监听器
   private[spark] def addToQueue(
       listener: SparkListenerInterface,
       queue: String): Unit = synchronized {
@@ -98,19 +105,23 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
     }
 
     queues.asScala.find(_.name == queue) match {
+        // 如果该队列已经存在，则在该队列中添加监听器
       case Some(queue) =>
         queue.addListener(listener)
 
       case None =>
+        // 如果不存在，则异步新建队列，并在该队列中添加监听器
         val newQueue = new AsyncEventQueue(queue, conf, metrics, this)
         newQueue.addListener(listener)
         if (started.get()) {
           newQueue.start(sparkContext)
         }
+        // 将新建的队列加入到queues中
         queues.add(newQueue)
     }
   }
 
+  //移除监听器
   def removeListener(listener: SparkListenerInterface): Unit = synchronized {
     // Remove listener from all queues it was added to, and stop queues that have become empty.
     queues.asScala
@@ -127,6 +138,7 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
   }
 
   /** Post an event to all queues. */
+  // 发送事件到所有的监听队列
   def post(event: SparkListenerEvent): Unit = {
     if (stopped.get()) {
       return
@@ -155,6 +167,7 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
     // queues.
     postToQueues(event)
   }
+
 
   private def postToQueues(event: SparkListenerEvent): Unit = {
     val it = queues.iterator()
@@ -206,6 +219,7 @@ private[spark] class LiveListenerBus(conf: SparkConf) {
    * Stop the listener bus. It will wait until the queued events have been processed, but drop the
    * new events after stopping.
    */
+  // 停止，依次停止所有的监听队列
   def stop(): Unit = {
     if (!started.get()) {
       throw new IllegalStateException(s"Attempted to stop bus that has not yet started!")

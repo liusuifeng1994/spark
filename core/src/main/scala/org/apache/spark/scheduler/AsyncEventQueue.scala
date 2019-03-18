@@ -34,6 +34,7 @@ import org.apache.spark.util.Utils
  * Delivery will only begin when the `start()` method is called. The `stop()` method should be
  * called when no more events need to be delivered.
  */
+//异步事件队列
 private class AsyncEventQueue(
     val name: String,
     conf: SparkConf,

@@ -60,6 +60,8 @@ import org.apache.spark.network.util.TransportFrameDecoder;
  * channel. As each TransportChannelHandler contains a TransportClient, this enables server
  * processes to send messages back to the client on an existing channel.
  */
+
+// 传输的上下文
 public class TransportContext {
   private static final Logger logger = LoggerFactory.getLogger(TransportContext.class);
 
@@ -140,6 +142,8 @@ public class TransportContext {
    * a new Client. Bootstraps will be executed synchronously, and must run successfully in order
    * to create a Client.
    */
+
+  // 创建传输客户端工厂
   public TransportClientFactory createClientFactory(List<TransportClientBootstrap> bootstraps) {
     return new TransportClientFactory(this, bootstraps);
   }

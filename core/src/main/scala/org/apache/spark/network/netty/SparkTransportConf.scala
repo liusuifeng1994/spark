@@ -27,6 +27,11 @@ import org.apache.spark.network.util.{ConfigProvider, NettyUtils, TransportConf}
  * Driver, or a standalone shuffle service) into a TransportConf with details on our environment
  * like the number of cores that are allocated to this JVM.
  */
+
+/**
+  * 用于从Spark JVM（例如，Executor，Driver或独立的shuffle服务）内的SparkConf转换为TransportConf，
+  * 其中包含有关我们环境的详细信息，例如分配给此JVM的核心数。
+  */
 object SparkTransportConf {
 
   /**
